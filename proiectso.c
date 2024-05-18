@@ -154,7 +154,7 @@ void Permisiuni(char *path, char *isolated_dir){
 
     while((dir_struct=readdir(directory))!=NULL){
         if((dir_struct->d_type!=DT_DIR) && (strcmp(dir_struct->d_name, ".")!=0) && (strcmp(dir_struct->d_name,"..")!=0)){
-            char aux[1024];
+            char aux[257];
             snprintf(aux, sizeof(aux), "%s/%s", path, dir_struct->d_name);
 
             if(stat(aux, &file)==-1){
@@ -163,33 +163,53 @@ void Permisiuni(char *path, char *isolated_dir){
             }
 
             if((file.st_mode & S_IRWXU)==0 && (file.st_mode & S_IRWXG)==0 && (file.st_mode & S_IRWXO)==0){
-                char command[1024+35];
-                snprintf(command, sizeof(command), "./verify_for_malicious.sh %s", aux);
+                int pipefd[2];
 
-                int out=system(command);
-                if(out==-1){
+                if (pipe(pipefd) == -1) {
+                    perror("pipe");
                     exit(EXIT_FAILURE);
                 }
                 
-                int outVal;//ce mi returneaza scriptul
-
-                if(WIFEXITED(out)!=0){
-                    outVal=WEXITSTATUS(out);
+                pid_t pid_pipe = fork();
+                if (pid_pipe == -1) {
+                    perror("fork");
+                    exit(EXIT_FAILURE);
                 }
 
-                //6->periculos 9->safe
-                if(outVal==6){
-                    char isolated_path[1024];
-                    snprintf(isolated_path, sizeof(isolated_path), "%s/%s", isolated_dir, dir_struct->d_name);
+                 if (pid_pipe == 0) { // Procesul copil
+                    close(pipefd[0]); // Închide capătul de citire
+                    // Construiește comanda pentru a rula scriptul
+                    char command[512];
+                    snprintf(command, sizeof(command), "./verify_for_malicious.sh %s %d", aux, pipefd[1]);
 
-                    if(rename(aux, isolated_path)==-1){
-                        exit(EXIT_FAILURE);
+                    // Execută scriptul
+                    system(command);
+
+                    close(pipefd[1]); // Închide capătul de scriere
+                    exit(EXIT_SUCCESS);
+                } else { // Procesul părinte
+                    close(pipefd[1]); // Închide capătul de scriere
+
+                    char buffer[256];
+                    read(pipefd[0], buffer, sizeof(buffer));
+
+                    close(pipefd[0]); // Închide capătul de citire
+                    
+                    // Verifică rezultatul
+                    if (strncmp(buffer, "SAFE", 4) == 0) {
+                        printf("SAFE.\n");
+                    } else {
+                        printf("%s\n", aux);
+                        char isolated_path[1024];
+                        snprintf(isolated_path, sizeof(isolated_path), "%s/%s", isolated_dir, dir_struct->d_name);
+
+                        if(rename(aux, isolated_path)==-1){
+                            exit(EXIT_FAILURE);
+                        }
                     }
-                    else{
-                        printf("Fisier %s mutat in izolate.\n", aux);
-                    }
+                    int status;
+                    waitpid(pid_pipe, &status, 0); // Așteaptă procesul copil
                 }
-            
             }
         }
         if(dir_struct->d_type==DT_DIR && strcmp(dir_struct->d_name,".")!=0 && strcmp(dir_struct->d_name,"..")!=0){
@@ -214,6 +234,7 @@ int main(int argc, char *argv[]){
         printf("Error argv.");
         exit(EXIT_FAILURE);
     }
+    
     //declar variabile si pun outputul si izolatele in argumentele potrivite
     char *output_dir=argv[2];
     char *isolated_dir=argv[4];
