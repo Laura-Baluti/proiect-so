@@ -1,8 +1,10 @@
 #!/bin/bash
-if [ $# -ne 1 ]; then
+if [ $# -ne 2 ]; then
     echo "Eroare argument."
     exit 1
 fi
+
+PIPE_FD=$2
 
 if [ ! -f "$1" ]; then
     echo "Fisierul $1 nu exista. (script)"
@@ -34,14 +36,13 @@ if [ "$line" -lt 3 ] && [ "$cuv" -gt 1000 ] && [ "$carac" -gt 2000 ]; then
 	periculos=6
     fi
 
-    #fisierul acum nu mai are niciun drept
     chmod 000 "$1"
     
     if [ $periculos -eq 9 ]; then
-	echo "SAFE"
+	echo "SAFE" >&${PIPE_FD}
 	exit 9
     else
-	echo "$1" #inseamna ca e periculos
+	echo "$1" >&${PIPE_FD}
 	exit 6
     fi
     
@@ -63,13 +64,16 @@ else #task-ul 4
     if [ $? -eq 0 ]; then
 	periculos=6
     fi
-    
+
+
     chmod 000 "$1"
-    
+
     if [ $periculos -eq 9 ]; then
-	exit 9
+        echo "SAFE" >&${PIPE_FD}
+        exit 9
     else
-	exit 6
+        echo "$1" >&${PIPE_FD}
+        exit 6
     fi
     
 fi
